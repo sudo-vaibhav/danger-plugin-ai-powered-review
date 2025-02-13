@@ -17,7 +17,7 @@ async function getDiffForFiles(
       const diff = await danger.git.diffForFile(file.name);
       return diff
         ? `### ${file.name} (${file.operation})\n\`\`\`diff\n${diff.before}\n${diff.after}\n\`\`\``
-        : null;
+        : "";
     })
   );
   return diffs.filter(Boolean).join("\n\n");
