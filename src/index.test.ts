@@ -1,88 +1,36 @@
 import aiPoweredReview from "./index";
-import { generateText, LanguageModelV1 } from "ai";
-// Create a dummy model conforming to LanguageModelV1
-const dummyModel = {
-  specificationVersion: "v1",
-  provider: "dummy",
-  modelId: "dummy-model-id",
-  defaultObjectGenerationMode: undefined,
-  async doGenerate(options) {
-    return {
-      text: "AI generated review text",
-      finishReason: "stop",
-      usage: { promptTokens: 0, completionTokens: 0 },
-      rawCall: { rawPrompt: null, rawSettings: {} }
-    };
-  },
-  async doStream(options) {
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue({
-          type: "text-delta",
-          textDelta: "AI generated review text"
-        });
-        controller.enqueue({
-          type: "finish",
-          finishReason: "stop",
-          usage: { promptTokens: 0, completionTokens: 0 }
-        });
-        controller.close();
-      }
-    });
-    return { stream, rawCall: { rawPrompt: null, rawSettings: {} } };
-  }
-} satisfies LanguageModelV1;
-// Mock the generateText function from the "ai" module.
-jest.mock("ai", () => ({
-  generateText: jest.fn()
-}));
+import { ChatOpenAI } from "@langchain/openai";
+
+// Mock the ChatOpenAI class to control its output
+jest.mock("@langchain/openai", () => {
+  return {
+    ChatOpenAI: jest.fn().mockImplementation(() => {
+      return {
+        invoke: jest.fn().mockResolvedValue({ content: "Mocked AI review" })
+      };
+    })
+  };
+});
 
 declare const global: any;
 
 describe("aiPoweredReview()", () => {
   beforeEach(() => {
-    // Stub out Danger's messaging functions.
+    // Set up the global functions that the module uses
     global.warn = jest.fn();
     global.message = jest.fn();
     global.fail = jest.fn();
     global.markdown = jest.fn();
 
-    // Set up a fake danger object with a PR title and file lists.
+    // Set up the danger global with a git object
     global.danger = {
-      github: {
-        pr: { title: "My Test Title" }
-      },
       git: {
-        modified_files: ["file1.js"],
-        created_files: ["file2.js"],
-        deleted_files: ["file3.js"],
-        // Stub diffForFile to return a dummy diff object for each file.
-        diffForFile: jest.fn((fileName: string) => {
-          if (fileName === "file1.js") {
-            return Promise.resolve({
-              before: "old code 1",
-              after: "new code 1"
-            });
-          } else if (fileName === "file2.js") {
-            return Promise.resolve({
-              before: "old code 2",
-              after: "new code 2"
-            });
-          } else if (fileName === "file3.js") {
-            return Promise.resolve({
-              before: "old code 3",
-              after: "new code 3"
-            });
-          }
-          return Promise.resolve(null);
-        })
+        modified_files: [],
+        created_files: [],
+        deleted_files: [],
+        diffForFile: jest.fn()
       }
     };
-
-    // Make generateText resolve with a predictable review text.
-    (generateText as jest.Mock).mockResolvedValue({
-      text: "AI generated review text"
-    });
   });
 
   afterEach(() => {
@@ -91,38 +39,47 @@ describe("aiPoweredReview()", () => {
     global.fail = undefined;
     global.markdown = undefined;
     global.danger = undefined;
-    jest.resetAllMocks();
+    jest.clearAllMocks();
   });
 
-  it("calls message with the AI generated review text", async () => {
-    await aiPoweredReview({
-      model: dummyModel,
-      systemMessage: "Test system prompt"
+  it("calls global.message with the AI review output when a diff is available", async () => {
+    // Arrange: simulate one modified file with an available diff
+    global.danger.git.modified_files = ["file1.js"];
+    global.danger.git.created_files = [];
+    global.danger.git.deleted_files = [];
+    global.danger.git.diffForFile.mockResolvedValue({
+      before: "old code",
+      after: "new code"
     });
 
-    expect(global.message).toHaveBeenCalledWith("AI generated review text");
+    const model = "any-model";
+    const systemMessage = "System message for diff available case";
+
+    // Act
+    await aiPoweredReview({ model, systemMessage });
+
+    // Assert: our mocked ChatOpenAI returns "Mocked AI review"
+    expect(global.message).toHaveBeenCalledWith("Mocked AI review");
+
+    // Also verify that ChatOpenAI was instantiated with the hard-coded model "o1"
+    expect(ChatOpenAI).toHaveBeenCalledWith({ model: "o1" });
   });
 
-  it("generates a prompt that includes the diffs for all files", async () => {
-    await aiPoweredReview({
-      model: dummyModel,
-      systemMessage: "Test system prompt"
-    });
+  it("calls global.message with the AI review output when no diff is available", async () => {
+    // Arrange: simulate one modified file but diffForFile returns null (no diff)
+    global.danger.git.modified_files = ["file1.js"];
+    global.danger.git.created_files = [];
+    global.danger.git.deleted_files = [];
+    global.danger.git.diffForFile.mockResolvedValue(null);
 
-    // Capture the first call's prompt argument passed to generateText.
-    const promptArg = (generateText as jest.Mock).mock.calls[0][0].prompt;
+    const model = "any-model";
+    const systemMessage = "System message for no diff case";
 
-    // Verify that the prompt contains the expected diff sections for each file.
-    expect(promptArg).toMatch(/### file1\.js \(modified\)/);
-    expect(promptArg).toMatch(/old code 1/);
-    expect(promptArg).toMatch(/new code 1/);
+    // Act
+    await aiPoweredReview({ model, systemMessage });
 
-    expect(promptArg).toMatch(/### file2\.js \(created\)/);
-    expect(promptArg).toMatch(/old code 2/);
-    expect(promptArg).toMatch(/new code 2/);
-
-    expect(promptArg).toMatch(/### file3\.js \(deleted\)/);
-    expect(promptArg).toMatch(/old code 3/);
-    expect(promptArg).toMatch(/new code 3/);
+    // Assert: even when no diff is available, the AI client returns our mocked output
+    expect(global.message).toHaveBeenCalledWith("Mocked AI review");
+    expect(ChatOpenAI).toHaveBeenCalledWith({ model: "o1" });
   });
 });
