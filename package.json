@@ -1,5 +1,5 @@
 {
-  "name": "@sudomakes/danger-plugin-ai-powered-review",
+  "name": "danger-plugin-ai-powered-review",
   "description": "use LLMs to find code smells and common anti-patterns before humans review PR",
   "author": {
     "name": "Vaibhav Chopra",
