@@ -1,0 +1,24 @@
+name: RELEASE
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Install deps
+        run: npm ci
+      - name: Test
+        run: npm run test
+      - name: Release
+        run: npm run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN  }}
+          NPM_TOKEN: ${{ secrets.SUDOMAKES_NPM_TOKEN }}
