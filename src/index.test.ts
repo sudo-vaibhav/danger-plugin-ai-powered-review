@@ -1,10 +1,10 @@
 import aiPoweredReview from "./index";
 import { ChatOpenAI } from "@langchain/openai";
 
-// Mock the ChatOpenAI class to control its output
+// Mock the ChatOpenAI class to control its output and capture its instantiation parameters
 jest.mock("@langchain/openai", () => {
   return {
-    ChatOpenAI: jest.fn().mockImplementation(() => {
+    ChatOpenAI: jest.fn().mockImplementation(config => {
       return {
         invoke: jest.fn().mockResolvedValue({ content: "Mocked AI review" })
       };
@@ -16,7 +16,7 @@ declare const global: any;
 
 describe("aiPoweredReview()", () => {
   beforeEach(() => {
-    // Set up the global functions that the module uses
+    // Initialize global functions
     global.warn = jest.fn();
     global.message = jest.fn();
     global.fail = jest.fn();
@@ -31,6 +31,9 @@ describe("aiPoweredReview()", () => {
         diffForFile: jest.fn()
       }
     };
+
+    // Ensure process.env has an API key for tests when one isn't provided
+    process.env.OPENAI_API_KEY = "env-api-key";
   });
 
   afterEach(() => {
@@ -42,44 +45,85 @@ describe("aiPoweredReview()", () => {
     jest.clearAllMocks();
   });
 
-  it("calls global.message with the AI review output when a diff is available", async () => {
-    // Arrange: simulate one modified file with an available diff
+  it("calls global.message with AI review output when both model and openAIApiKey are provided", async () => {
+    // Arrange: simulate one modified file with a valid diff
     global.danger.git.modified_files = ["file1.js"];
-    global.danger.git.created_files = [];
-    global.danger.git.deleted_files = [];
     global.danger.git.diffForFile.mockResolvedValue({
       before: "old code",
       after: "new code"
     });
-
-    const model = "any-model";
-    const systemMessage = "System message for diff available case";
+    const model = "my-model";
+    const systemMessage = "System message for provided params";
+    const openAIApiKey = "provided-api-key";
 
     // Act
-    await aiPoweredReview({ model, systemMessage });
+    await aiPoweredReview({ model, systemMessage, openAIApiKey });
 
-    // Assert: our mocked ChatOpenAI returns "Mocked AI review"
+    // Assert: global.message should be called with the LLM's output
     expect(global.message).toHaveBeenCalledWith("Mocked AI review");
 
-    // Also verify that ChatOpenAI was instantiated with the hard-coded model "o1"
-    expect(ChatOpenAI).toHaveBeenCalledWith({ model: "o1" });
+    // And ChatOpenAI should be instantiated with the provided parameters
+    expect(ChatOpenAI).toHaveBeenCalledWith({ model, openAIApiKey });
   });
 
-  it("calls global.message with the AI review output when no diff is available", async () => {
-    // Arrange: simulate one modified file but diffForFile returns null (no diff)
+  it("calls global.message with AI review output using the env API key when openAIApiKey is omitted", async () => {
+    // Arrange: simulate one modified file with a valid diff
     global.danger.git.modified_files = ["file1.js"];
-    global.danger.git.created_files = [];
-    global.danger.git.deleted_files = [];
-    global.danger.git.diffForFile.mockResolvedValue(null);
-
-    const model = "any-model";
-    const systemMessage = "System message for no diff case";
+    global.danger.git.diffForFile.mockResolvedValue({
+      before: "old code",
+      after: "new code"
+    });
+    const model = "another-model";
+    const systemMessage = "System message without provided API key";
 
     // Act
     await aiPoweredReview({ model, systemMessage });
 
-    // Assert: even when no diff is available, the AI client returns our mocked output
+    // Assert: global.message should be called with the LLM's output
     expect(global.message).toHaveBeenCalledWith("Mocked AI review");
-    expect(ChatOpenAI).toHaveBeenCalledWith({ model: "o1" });
+
+    // And ChatOpenAI should fall back to using process.env.OPENAI_API_KEY
+    expect(ChatOpenAI).toHaveBeenCalledWith({
+      model,
+      openAIApiKey: "env-api-key"
+    });
+  });
+
+  it("calls global.message with AI review output when model is omitted", async () => {
+    // Arrange: simulate one modified file with a valid diff
+    global.danger.git.modified_files = ["file1.js"];
+    global.danger.git.diffForFile.mockResolvedValue({
+      before: "old code",
+      after: "new code"
+    });
+    const systemMessage = "System message without model";
+
+    // Act
+    await aiPoweredReview({ systemMessage });
+
+    // Assert: global.message should be called with the LLM's output
+    expect(global.message).toHaveBeenCalledWith("Mocked AI review");
+
+    // And ChatOpenAI should be instantiated with model as undefined and using the env API key
+    expect(ChatOpenAI).toHaveBeenCalledWith({
+      model: "o1",
+      openAIApiKey: "env-api-key"
+    });
+  });
+
+  it("calls global.message with AI review output when no diff is available", async () => {
+    // Arrange: simulate a file where diffForFile returns null
+    global.danger.git.modified_files = ["file1.js"];
+    global.danger.git.diffForFile.mockResolvedValue(null);
+    const model = "test-model";
+    const systemMessage = "System message when no diff exists";
+    const openAIApiKey = "provided-api-key";
+
+    // Act
+    await aiPoweredReview({ model, systemMessage, openAIApiKey });
+
+    // Assert: even without a diff, the LLM returns our mocked response
+    expect(global.message).toHaveBeenCalledWith("Mocked AI review");
+    expect(ChatOpenAI).toHaveBeenCalledWith({ model, openAIApiKey });
   });
 });

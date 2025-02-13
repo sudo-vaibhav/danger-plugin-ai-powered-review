@@ -31,7 +31,7 @@ export default async function aiPoweredReview({
   systemMessage,
   openAIApiKey
 }: {
-  model: string;
+  model?: string;
   systemMessage: string;
   openAIApiKey?: string;
 }) {
@@ -49,7 +49,7 @@ export default async function aiPoweredReview({
   ];
 
   const chatCompletionClient = new ChatOpenAI({
-    model: model,
+    model: model || "o1",
     openAIApiKey: openAIApiKey || process.env.OPENAI_API_KEY
   });
 
