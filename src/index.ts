@@ -45,7 +45,7 @@ export default async function aiPoweredReview({
   ]
 
   const chatCompletionClient = new ChatOpenAI({
-    model: model || "o1",
+    model: model || "gpt-4o",
     openAIApiKey: openAIApiKey || process.env.OPENAI_API_KEY,
   })
 
